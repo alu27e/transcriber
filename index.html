@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Transcriber</title>
+    <link rel="icon" href="icon.svg" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <nav>
+        <button class="active" id="editorTab">EDITOR</button
+        ><button id="textTab">TRANSCRIPTION</button>
+      </nav>
+      <button id="loadProject">OPEN PROJECT</button
+      ><button id="export" disabled>EXPORT</button>
+    </header>
+    <main>
+      <aside class="library">
+        <button id="open" class="wide primary">Upload image</button>
+        <div class="project">
+          <strong id="filename"></strong><span id="dimensions"></span>
+        </div>
+        <div class="sectiontitle">
+          <h2>Symbols</h2>
+          <span id="classCount">0</span>
+        </div>
+        <button id="newSymbol" class="wide">+ Add symbol</button>
+        <div id="classes"></div>
+        <h2>Tools</h2>
+        <div class="tools">
+          <button
+            id="select"
+            class="icon active"
+            title="Select symbol (B)"
+            aria-label="Select symbol"
+          ></button
+          ><button
+            id="pan"
+            class="icon"
+            title="Move image (H)"
+            aria-label="Move image"
+          ></button
+          ><button
+            id="erase"
+            class="icon"
+            title="Erase match (E)"
+            aria-label="Erase match"
+          ></button>
+        </div>
+        <div class="tool-actions">
+          <button id="manual" title="Draw a missing occurrence of the selected symbol">
+            Add occurrence
+          </button>
+          <button
+            id="route"
+            title="Click matches in reading order; click an assigned match to remove it from the route"
+          >
+            Trace route
+          </button>
+        </div>
+        <h2>Reading</h2>
+        <select id="readingMode" aria-label="Reading order">
+          <option value="rows-ltr">Rows: left to right</option>
+          <option value="rows-rtl">Rows: right to left</option>
+          <option value="rows-snake">Rows: zigzag</option>
+          <option value="columns-ltr">Columns: left to right</option>
+          <option value="columns-rtl">Columns: right to left</option>
+          <option value="columns-snake">Columns: zigzag</option>
+          <option value="custom">Custom route</option>
+        </select>
+        <output id="routeCount"></output>
+        <button id="clearRoute" class="wide">Clear route</button>
+        <h2>Matching</h2>
+        <label class="match-mode" for="matchMode">Compare</label>
+        <select id="matchMode" aria-label="Matching mode">
+          <option value="luminance">Shape (brightness)</option>
+          <option value="color">Color + shape</option>
+        </select>
+        <div id="colorSettings" hidden>
+          <label class="sliderlabel" for="colorTolerance"
+            >Color tolerance <output id="colorToleranceValue">12%</output></label
+          >
+          <input
+            id="colorTolerance"
+            type="range"
+            min="0"
+            max="50"
+            value="12"
+            aria-label="Color tolerance"
+            title="Allowed RGB difference across the sample, including background. Lower is stricter."
+          />
+        </div>
+        <label class="check" id="invertedSettings"
+          ><input id="allowInverted" type="checkbox" /> Include inverted contrast</label
+        >
+        <div class="sample">
+          <canvas id="sample" width="220" height="120"></canvas
+          ><span id="sampleEmpty"></span>
+        </div>
+        <div class="fields">
+          <label
+            >Label<input
+              id="label"
+              maxlength="12"
+              placeholder="A"
+              aria-label="Symbol label" /></label
+          ><label
+            >Color<input
+              id="color"
+              type="color"
+              value="#56d5cf"
+              aria-label="Symbol color"
+          /></label>
+        </div>
+        <label class="sliderlabel"
+          >Similarity <output id="thresholdValue">92%</output></label
+        ><input
+          id="threshold"
+          type="range"
+          min="65"
+          max="100"
+          value="92"
+          aria-label="Minimum similarity"
+        /><label class="check"
+          ><input id="scales" type="checkbox" /> Nearby sizes (±15%)</label
+        ><label class="check"><input id="labels" type="checkbox" checked /> Labels</label
+        ><label class="check"><input id="boxes" type="checkbox" checked /> Boxes</label
+        ><button id="search" class="primary wide" disabled>Find matches</button
+        ><button id="cancel" class="wide" hidden>Cancel</button>
+        <h2>Delete</h2>
+        <button id="deleteClass" class="wide" disabled>Selected symbol</button>
+        <button id="resetExcluded" class="wide" disabled>Reset rejected matches</button>
+      </aside>
+      <section class="workspace">
+        <div class="toolbar">
+          <div class="tools">
+            <button id="undo" class="icon" title="Undo" aria-label="Undo"></button
+            ><button id="redo" class="icon" title="Redo" aria-label="Redo"></button>
+          </div>
+          <div class="tools">
+            <button id="minus" class="icon" aria-label="Zoom out"></button
+            ><output id="zoom">100%</output
+            ><button id="plus" class="icon" aria-label="Zoom in"></button
+            ><button id="fit" title="Fit image">Fit</button>
+          </div>
+        </div>
+        <div id="stage">
+          <canvas id="canvas" aria-label="Image and symbol boxes"></canvas
+          ><button id="uploadEmpty" class="primary">Upload image</button>
+          <div id="dropHint">Upload image</div>
+        </div>
+        <div id="transcription" hidden>
+          <div class="sectiontitle">
+            <h2>Transcription</h2>
+            <button id="copy">Copy text</button>
+          </div>
+          <textarea id="text" readonly aria-label="Transcribed text"></textarea
+          ><label
+            >Row spacing
+            <input id="rowTolerance" type="range" min="20" max="100" value="50" /><span
+              id="rowValue"
+              >50%</span
+            ></label
+          >
+          <label for="tokenSeparator">Between symbols</label>
+          <select id="tokenSeparator">
+            <option value="">Nothing</option>
+            <option value=" ">Space</option>
+            <option value="/">Slash</option>
+          </select>
+          <label class="check"
+            ><input id="lineBreaks" type="checkbox" checked /> Keep row / column
+            breaks</label
+          >
+          <button id="exportText">Download text</button>
+        </div>
+        <footer><span id="status" role="status"></span><span id="total"></span></footer>
+      </section>
+      <aside class="inspector">
+        <div class="sectiontitle">
+          <h2>Selection</h2>
+          <span id="matchCount"></span>
+        </div>
+        <div id="selectionInfo"></div>
+        <h2>Review matches</h2>
+        <select id="reviewSort" aria-label="Review order">
+          <option value="score">Lowest similarity first</option>
+          <option value="position">Image order</option>
+        </select>
+        <label for="reassignTarget">Move occurrence to</label>
+        <select id="reassignTarget" aria-label="Target symbol"></select>
+        <div id="matchGallery"></div>
+        <div class="review-pages">
+          <button id="reviewPrev" aria-label="Previous matches">Previous</button
+          ><output id="reviewPage"></output
+          ><button id="reviewNext" aria-label="Next matches">Next</button>
+        </div>
+      </aside>
+    </main>
+    <dialog id="exportDialog">
+      <div class="sectiontitle">
+        <h2>Export</h2>
+        <button id="closeExport" aria-label="Close">×</button>
+      </div>
+      <button id="exportPng">Annotated image · PNG</button
+      ><button id="exportCsv">Positions and labels · CSV</button
+      ><button id="saveProject">Editable project · JSON</button>
+    </dialog>
+    <input id="file" type="file" accept="image/*" hidden /><input
+      id="projectFile"
+      type="file"
+      accept="application/json"
+      hidden
+    />
+    <script src="matcher.js"></script>
+    <script src="project.js"></script>
+    <script src="search.js"></script>
+    <script src="icons.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
