@@ -92,6 +92,44 @@
     context.scale(zoom, zoom);
     context.imageSmoothingEnabled = zoom < 2;
     if (imageCanvas.width) context.drawImage(imageCanvas, 0, 0);
+    const gridGroup = getSelectedGroup();
+    if (gridGroup?.matchMode === 'grid' && gridGroup.grid && $('showGrid').checked) {
+      const g = gridGroup.grid;
+      const left = Math.max(0, -offset.x / zoom),
+        top = Math.max(0, -offset.y / zoom);
+      const right = Math.min(
+        imageCanvas.width,
+        (canvas.width / devicePixelRatio - offset.x) / zoom,
+      );
+      const bottom = Math.min(
+        imageCanvas.height,
+        (canvas.height / devicePixelRatio - offset.y) / zoom,
+      );
+      context.beginPath();
+      context.strokeStyle = gridGroup.color;
+      context.lineWidth = 1 / zoom;
+      if (g.width * zoom >= 4)
+        for (
+          let i = Math.max(0, Math.ceil((left - (g.x % g.width)) / g.width));
+          (g.x % g.width) + i * g.width <= right;
+          i++
+        ) {
+          const x = Math.round((g.x % g.width) + i * g.width);
+          context.moveTo(x, top);
+          context.lineTo(x, bottom);
+        }
+      if (g.height * zoom >= 4)
+        for (
+          let i = Math.max(0, Math.ceil((top - (g.y % g.height)) / g.height));
+          (g.y % g.height) + i * g.height <= bottom;
+          i++
+        ) {
+          const y = Math.round((g.y % g.height) + i * g.height);
+          context.moveTo(left, y);
+          context.lineTo(right, y);
+        }
+      context.stroke();
+    }
     if ($('boxes').checked)
       groups.forEach((g) =>
         g.matches.forEach((b) => drawMatchBox(context, b, g.color, g.label)),
@@ -220,6 +258,7 @@
             matches: [],
             threshold: 0.92,
             scales: false,
+            grid: { width: r.w, height: r.h, x: r.x, y: r.y },
             matchMode: $('matchMode').value || 'luminance',
             colorTolerance: Number($('colorTolerance').value) / 100,
             allowInverted:
@@ -293,6 +332,11 @@
       'matchMode',
       'colorTolerance',
       'allowInverted',
+      'gridWidth',
+      'gridHeight',
+      'gridX',
+      'gridY',
+      'gridFromSample',
     ].forEach((id) => ($(id).disabled = !g || symbolSearch.running));
     const p = $('sample').getContext('2d');
     p.clearRect(0, 0, 220, 120);
@@ -304,6 +348,16 @@
       $('matchMode').value = g.matchMode;
       $('colorTolerance').value = Math.round(g.colorTolerance * 100);
       $('allowInverted').checked = g.allowInverted;
+      const grid = g.grid || {
+        width: g.rect.w,
+        height: g.rect.h,
+        x: g.rect.x,
+        y: g.rect.y,
+      };
+      $('gridWidth').value = grid.width;
+      $('gridHeight').value = grid.height;
+      $('gridX').value = grid.x;
+      $('gridY').value = grid.y;
       const r = g.rect,
         k = Math.min(180 / r.w, 85 / r.h, 8);
       p.imageSmoothingEnabled = false;
@@ -326,8 +380,16 @@
     }
     $('thresholdValue').textContent = $('threshold').value + '%';
     $('colorToleranceValue').textContent = $('colorTolerance').value + '%';
-    $('colorSettings').hidden = $('matchMode').value !== 'color';
-    $('invertedSettings').hidden = $('matchMode').value === 'color';
+    $('colorSettings').hidden = $('matchMode').value === 'luminance';
+    $('invertedSettings').hidden = $('matchMode').value !== 'luminance';
+    $('gridSettings').hidden = $('matchMode').value !== 'grid';
+    $('scales').disabled = !g || symbolSearch.running || g.matchMode === 'grid';
+    $('thresholdLabel').textContent =
+      g?.matchMode === 'grid' ? 'Cell coverage' : 'Similarity';
+    $('colorTolerance').title =
+      g?.matchMode === 'grid'
+        ? 'RGB distance from the sample color. Cell interiors are sampled; the outer 15% is ignored.'
+        : 'Allowed RGB difference across the sample, including background.';
     $('readingMode').value = reading.mode;
     $('tokenSeparator').value = reading.separator;
     $('lineBreaks').checked = reading.lineBreaks;
@@ -395,7 +457,7 @@
         box.h * scale,
       );
       const caption = document.createElement('span');
-      caption.textContent = `${box.manual ? 'Manual' : Math.round(box.score * 100) + '% similarity'}${box.order ? ' / route ' + box.order : ''}`;
+      caption.textContent = `${box.manual ? 'Manual' : Math.round(box.score * 100) + (group.matchMode === 'grid' ? '% coverage' : '% similarity')}${box.order ? ' / route ' + box.order : ''}`;
       preview.append(crop, caption);
       preview.onclick = () => {
         showEditor();
@@ -496,6 +558,7 @@
         matchMode: group.matchMode,
         colorTolerance: group.colorTolerance,
         allowInverted: group.allowInverted,
+        grid: group.grid,
       },
       {
         progress: (value) => setStatus(`Finding matches... ${value}%`),
@@ -692,12 +755,52 @@
     if (!group) return;
     recordEdit();
     group.matchMode = $('matchMode').value;
-    if (group.matchMode === 'color') group.allowInverted = false;
+    if (group.matchMode !== 'luminance') group.allowInverted = false;
+    if (group.matchMode === 'grid') {
+      group.grid ||= {
+        width: group.rect.w,
+        height: group.rect.h,
+        x: group.rect.x,
+        y: group.rect.y,
+      };
+      group.colorTolerance = Math.min(group.colorTolerance, 0.03);
+    }
     render();
     setStatus('Matching settings changed. Click Find matches to update results.');
   };
   $('colorTolerance').oninput = () => {
     $('colorToleranceValue').textContent = $('colorTolerance').value + '%';
+  };
+  $('showGrid').onchange = renderCanvas;
+  const gridInputs = { gridWidth: 'width', gridHeight: 'height', gridX: 'x', gridY: 'y' };
+  for (const [id, key] of Object.entries(gridInputs))
+    $(id).onchange = () => {
+      const group = getSelectedGroup();
+      if (!group || symbolSearch.running) return;
+      const grid = { ...group.grid, [key]: Number($(id).value) };
+      try {
+        TranscriberProject.validateGroups(
+          [{ ...group, grid }],
+          imageCanvas.width,
+          imageCanvas.height,
+        );
+      } catch (error) {
+        render();
+        setStatus(error.message);
+        return;
+      }
+      recordEdit();
+      group.grid = grid;
+      render();
+      setStatus('Grid changed. Click Find matches to update results.');
+    };
+  $('gridFromSample').onclick = () => {
+    const g = getSelectedGroup();
+    if (!g || symbolSearch.running) return;
+    recordEdit();
+    g.grid = { width: g.rect.w, height: g.rect.h, x: g.rect.x, y: g.rect.y };
+    render();
+    setStatus('Grid aligned to sample bounds. Click Find matches.');
   };
   $('colorTolerance').onchange = () => {
     const group = getSelectedGroup();

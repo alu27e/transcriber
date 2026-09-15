@@ -10,6 +10,7 @@ function matchSymbols(input, report = () => {}) {
     matchMode = 'luminance',
     colorTolerance = 0.12,
     allowInverted = false,
+    grid,
   } = input;
   if (
     !Number.isInteger(W) ||
@@ -34,14 +35,83 @@ function matchSymbols(input, report = () => {}) {
     !scales.length ||
     scales.length > 10 ||
     !scales.every((scale) => Number.isFinite(scale) && scale >= 0.25 && scale <= 4) ||
-    !['luminance', 'color'].includes(matchMode) ||
+    !['luminance', 'color', 'grid'].includes(matchMode) ||
     !Number.isFinite(colorTolerance) ||
     colorTolerance < 0 ||
     colorTolerance > 0.5 ||
     typeof allowInverted !== 'boolean' ||
-    (matchMode === 'color' && allowInverted)
+    (matchMode !== 'luminance' && allowInverted)
   ) {
     throw new Error('Invalid matching input.');
+  }
+  if (matchMode === 'grid') {
+    if (
+      !grid ||
+      !['width', 'height', 'x', 'y'].every((k) => Number.isFinite(grid[k])) ||
+      grid.width < 3 ||
+      grid.height < 3 ||
+      grid.width > W ||
+      grid.height > H ||
+      grid.x < 0 ||
+      grid.y < 0 ||
+      grid.x >= W ||
+      grid.y >= H
+    )
+      throw new Error(
+        'Invalid grid. Cell sizes must be at least 3 pixels and the anchor must be inside the image.',
+      );
+    const columns = Math.ceil(W / grid.width),
+      rows = Math.ceil(H / grid.height);
+    if (columns * rows > 100000)
+      throw new Error('Too many grid cells. Increase the cell size.');
+    const rgb = (x, y) => {
+      const i = (y * W + x) * 4,
+        alpha = pixels[i + 3] / 255;
+      return [0, 1, 2].map((c) => pixels[i + c] * alpha + 255 * (1 - alpha));
+    };
+    // Sample cell interiors, excluding the outer 15% where grid lines and antialiasing occur.
+    function samples(box) {
+      const points = [];
+      for (let y = 0; y < 9; y++)
+        for (let x = 0; x < 9; x++)
+          points.push(
+            rgb(
+              Math.floor(box.x + box.w * (0.15 + ((x + 0.5) * 0.7) / 9)),
+              Math.floor(box.y + box.h * (0.15 + ((y + 0.5) * 0.7) / 9)),
+            ),
+          );
+      return points;
+    }
+    const reference = samples(rect);
+    const color = [0, 1, 2].map(
+      (c) => reference.map((p) => p[c]).sort((a, b) => a - b)[40],
+    );
+    const error = (p) =>
+      Math.sqrt(p.reduce((sum, v, c) => sum + (v - color[c]) ** 2, 0) / 3) / 255;
+    const coverage = (points) =>
+      points.filter((p) => error(p) <= colorTolerance + 1e-6).length / points.length;
+    if (coverage(reference) + 1e-6 < threshold)
+      throw new Error(
+        'Grid mode needs a single-color sample. Select inside one colored cell.',
+      );
+    const originX = grid.x % grid.width,
+      originY = grid.y % grid.height,
+      found = [];
+    for (let row = 0; row <= rows; row++) {
+      const y = Math.round(originY + row * grid.height),
+        bottom = Math.round(originY + (row + 1) * grid.height);
+      if (bottom > H) break;
+      for (let col = 0; col <= columns; col++) {
+        const x = Math.round(originX + col * grid.width),
+          right = Math.round(originX + (col + 1) * grid.width);
+        if (right > W) break;
+        const box = { x, y, w: right - x, h: bottom - y };
+        const score = coverage(samples(box));
+        if (score + 1e-6 >= threshold) found.push({ ...box, score });
+      }
+      report(Math.round((100 * (row + 1)) / Math.max(1, rows)));
+    }
+    return found;
   }
   const channels = matchMode === 'color' ? 3 : 1;
   const values = new Float32Array(W * H * channels);
@@ -95,7 +165,7 @@ function matchSymbols(input, report = () => {}) {
     }
     if (spatialVariance < 25 * n * channels)
       throw new Error(
-        'The sample has too little contrast. Include the symbol and a small background margin.',
+        'The sample has too little contrast. For solid-color cells, use Grid cells (color). Otherwise include a small background margin.',
       );
     function correlate(x, y, data) {
       let sum = 0,

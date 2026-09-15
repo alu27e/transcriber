@@ -61,18 +61,34 @@ const TranscriberProject = (() => {
       const allowInverted =
         group.allowInverted === undefined ? false : group.allowInverted;
       if (
-        !['luminance', 'color'].includes(matchMode) ||
+        !['luminance', 'color', 'grid'].includes(matchMode) ||
         !Number.isFinite(colorTolerance) ||
         colorTolerance < 0 ||
         colorTolerance > 0.5 ||
         typeof allowInverted !== 'boolean' ||
-        (matchMode === 'color' && allowInverted)
+        (matchMode !== 'luminance' && allowInverted)
       ) {
         throw new Error('Invalid color matching settings.');
       }
       matchCount += group.matches.length;
       if (matchCount > MAX_MATCHES) throw new Error('Too many matches in this project.');
       const rect = validateBox(group.rect, width, height);
+      if (group.grid !== undefined || matchMode === 'grid') {
+        const grid = group.grid;
+        if (
+          !grid ||
+          !['width', 'height', 'x', 'y'].every((k) => Number.isFinite(grid[k])) ||
+          grid.width < 3 ||
+          grid.height < 3 ||
+          grid.width > width ||
+          grid.height > height ||
+          grid.x < 0 ||
+          grid.y < 0 ||
+          grid.x >= width ||
+          grid.y >= height
+        )
+          throw new Error('Invalid grid settings.');
+      }
       if (
         group.excluded !== undefined &&
         (!Array.isArray(group.excluded) || group.excluded.length > MAX_MATCHES)
@@ -122,6 +138,16 @@ const TranscriberProject = (() => {
         matchMode,
         colorTolerance,
         allowInverted,
+        ...(group.grid
+          ? {
+              grid: {
+                width: group.grid.width,
+                height: group.grid.height,
+                x: group.grid.x,
+                y: group.grid.y,
+              },
+            }
+          : {}),
         ...(excluded.length ? { excluded } : {}),
       };
     });

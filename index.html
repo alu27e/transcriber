@@ -77,7 +77,32 @@
         <select id="matchMode" aria-label="Matching mode">
           <option value="luminance">Shape (brightness)</option>
           <option value="color">Color + shape</option>
+          <option value="grid">Grid cells (color)</option>
         </select>
+        <div id="gridSettings" hidden>
+          <div class="fields">
+            <label
+              >Cell width<input id="gridWidth" type="number" min="3" step="0.01"
+            /></label>
+            <label
+              >Cell height<input id="gridHeight" type="number" min="3" step="0.01"
+            /></label>
+          </div>
+          <div class="fields">
+            <label>Anchor X<input id="gridX" type="number" min="0" step="0.01" /></label>
+            <label>Anchor Y<input id="gridY" type="number" min="0" step="0.01" /></label>
+          </div>
+          <button
+            id="gridFromSample"
+            class="wide"
+            title="Use the sample box as one complete grid cell"
+          >
+            Use sample bounds
+          </button>
+          <label class="check"
+            ><input id="showGrid" type="checkbox" checked /> Show grid</label
+          >
+        </div>
         <div id="colorSettings" hidden>
           <label class="sliderlabel" for="colorTolerance"
             >Color tolerance <output id="colorToleranceValue">12%</output></label
@@ -115,7 +140,8 @@
           /></label>
         </div>
         <label class="sliderlabel"
-          >Similarity <output id="thresholdValue">92%</output></label
+          ><span id="thresholdLabel">Similarity</span>
+          <output id="thresholdValue">92%</output></label
         ><input
           id="threshold"
           type="range"
