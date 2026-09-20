@@ -559,40 +559,28 @@
         colorTolerance: group.colorTolerance,
         allowInverted: group.allowInverted,
         grid: group.grid,
+        occupied: groups.flatMap((g) =>
+          g.matches.map(({ x, y, w, h }) => ({ x, y, w, h })),
+        ),
       },
       {
         progress: (value) => setStatus(`Finding matches... ${value}%`),
         complete: (matches) => {
           recordEdit();
-          // Retain manual corrections and route metadata when a box is found again.
-          const previous = group.matches;
-          group.matches = matches
-            .filter(
-              (b) =>
-                !(group.excluded || []).some((p) => {
-                  const intersection =
-                    Math.max(0, Math.min(b.x + b.w, p.x + p.w) - Math.max(b.x, p.x)) *
-                    Math.max(0, Math.min(b.y + b.h, p.y + p.h) - Math.max(b.y, p.y));
-                  return intersection / Math.min(b.w * b.h, p.w * p.h) > 0.5;
-                }),
-            )
-            .map((b) => {
-              const old = previous.find(
-                (p) => p.x === b.x && p.y === b.y && p.w === b.w && p.h === b.h,
-              );
-              return old ? { ...old, score: b.score } : b;
-            });
-          previous
-            .filter((b) => b.manual || b.order !== undefined || b.after)
-            .forEach((b) => {
-              if (
-                !group.matches.some(
-                  (m) => m.x === b.x && m.y === b.y && m.w === b.w && m.h === b.h,
-                )
-              )
-                group.matches.push(b);
-            });
-          setStatus(`${matches.length} matches found.`);
+          // Existing occurrences reserve their regions, including this group's boxes.
+          const additions = matches.filter(
+            (b) =>
+              !(group.excluded || []).some((p) => {
+                const intersection =
+                  Math.max(0, Math.min(b.x + b.w, p.x + p.w) - Math.max(b.x, p.x)) *
+                  Math.max(0, Math.min(b.y + b.h, p.y + p.h) - Math.max(b.y, p.y));
+                return intersection / Math.min(b.w * b.h, p.w * p.h) > 0.5;
+              }),
+          );
+          group.matches.push(...additions);
+          setStatus(
+            `${additions.length} new matches found. ${group.matches.length} total.`,
+          );
           finish();
         },
         error: (error) => {

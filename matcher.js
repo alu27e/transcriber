@@ -11,6 +11,7 @@ function matchSymbols(input, report = () => {}) {
     colorTolerance = 0.12,
     allowInverted = false,
     grid,
+    occupied = [],
   } = input;
   if (
     !Number.isInteger(W) ||
@@ -43,6 +44,37 @@ function matchSymbols(input, report = () => {}) {
     (matchMode !== 'luminance' && allowInverted)
   ) {
     throw new Error('Invalid matching input.');
+  }
+  if (
+    !Array.isArray(occupied) ||
+    occupied.length > 100000 ||
+    occupied.some(
+      (box) =>
+        !box ||
+        !['x', 'y', 'w', 'h'].every((key) => Number.isFinite(box[key])) ||
+        box.x < 0 ||
+        box.y < 0 ||
+        box.w <= 0 ||
+        box.h <= 0 ||
+        box.x + box.w > W ||
+        box.y + box.h > H,
+    )
+  )
+    throw new Error('Invalid occupied regions.');
+  function isOccupied(box) {
+    return occupied.some((reserved) => {
+      const intersection =
+        Math.max(
+          0,
+          Math.min(box.x + box.w, reserved.x + reserved.w) - Math.max(box.x, reserved.x),
+        ) *
+        Math.max(
+          0,
+          Math.min(box.y + box.h, reserved.y + reserved.h) - Math.max(box.y, reserved.y),
+        );
+      // Use the smaller area: a component inside a larger symbol is fully occupied.
+      return intersection / Math.min(box.w * box.h, reserved.w * reserved.h) > 0.2;
+    });
   }
   if (matchMode === 'grid') {
     if (
@@ -106,6 +138,7 @@ function matchSymbols(input, report = () => {}) {
           right = Math.round(originX + (col + 1) * grid.width);
         if (right > W) break;
         const box = { x, y, w: right - x, h: bottom - y };
+        if (isOccupied(box)) continue;
         const score = coverage(samples(box));
         if (score + 1e-6 >= threshold) found.push({ ...box, score });
       }
@@ -198,7 +231,8 @@ function matchSymbols(input, report = () => {}) {
         const score = correlate(x, y, full);
         if (
           score + 1e-6 >= threshold &&
-          (channels === 1 || colorError(x, y) <= colorTolerance + 1e-6)
+          (channels === 1 || colorError(x, y) <= colorTolerance + 1e-6) &&
+          !isOccupied({ x, y, w, h })
         )
           candidates.push({ x, y, w, h, score: Math.min(1, score) });
       }
